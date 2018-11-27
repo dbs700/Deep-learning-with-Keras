@@ -1,0 +1,67 @@
+library(syuzhet)
+library(keras)
+library(tidyverse)
+
+syuzhet <- get_sentiment(cleaned_documents$terms, method = "syuzhet")
+bing <- get_sentiment(cleaned_documents$terms, method = "bing")
+afinn <- get_sentiment(cleaned_documents$terms, method = "afinn")
+nrc <- get_sentiment(cleaned_documents$terms, method = "nrc")
+sentiments <- data.frame(syuzhet, bing, afinn, nrc)
+
+## Sentiment average
+sentiments$total_sentiment <- ((nrc + bing + syuzhet + afinn) / 4)
+
+sentiments$total_sentiment[sentiments$total_sentiment < 0] <- 0
+
+sentiments <- sentiments %>%
+  mutate(total_sentiment = ifelse(total_sentiment >= 0.5, 1, 0))
+  
+table(sentiments$total_sentiment)
+total <- sentiments$total_sentiment
+
+test <- test[1:84782, ]
+test$sentiment <- total
+
+
+
+#Preparing model
+
+max_words <- 2000
+maxl <- 256
+
+wordseq = text_tokenizer(num_words = max_words) %>%
+  fit_text_tokenizer(test$text)
+
+test_data = texts_to_sequences(wordseq, test$text) #%>%
+#pad_sequences( maxlen = maxl)
+
+tokenizer <- text_tokenizer(num_words = max_words)
+x_train <-
+  sequences_to_matrix(tokenizer, test_data, mode = 'binary')
+
+num_classes <- 2
+labels <- as.matrix(test$sentiment)
+labels <- to_categorical(labels, num_classes)
+
+#model
+model <- keras_model_sequential()
+model %>%
+  layer_dense(units = 10000, input_shape = c(2000)) %>%
+  layer_activation(activation = 'relu') %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = num_classes) %>%
+  layer_activation(activation = 'softmax')
+
+model %>% compile(loss = 'categorical_crossentropy',
+                  optimizer = 'adam',
+                  metrics = c('accuracy'))
+
+history <- model %>% fit(
+  x_train,
+  labels,
+  batch_size = 32,
+  epochs = 5,
+  verbose = 1,
+  #validation_split = (0.1:0.6)
+  validation_split = 0.99
+)
